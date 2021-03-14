@@ -1,0 +1,30 @@
+on: [push, pull_request]
+name: build
+jobs:
+  test:
+    strategy:
+      matrix:
+        go-version: [1.14.x, 1.15.x]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+      
+    - name: Test
+      run: go test ./... -coverprofile cover.info
+
+    - name: Codecov
+      run: |
+        if [ -n "$CODECOV_TOKEN" ]; then
+          curl -s https://codecov.io/bash | bash -s -- -t $CODECOV_TOKEN -f $COVERAGE_FILE
+        fi
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        COVERAGE_FILE: ./cover.info
+      if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
