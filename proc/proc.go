@@ -108,7 +108,7 @@ const (
 )
 
 func (ps ProcStatus) String() string {
-	return [...]string{"Stopped", "Exited", "Running"}[ps]
+	return [...]string{"Running", "Exited", "Stopped"}[ps]
 }
 
 func (p Proc) Query() (chan<- ProcOutput, error) {
