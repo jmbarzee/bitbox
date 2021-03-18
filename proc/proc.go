@@ -100,12 +100,12 @@ type ProcStatus int
 const (
 	// Running indicates that the process is running.
 	Running ProcStatus = iota
-	// Stopped indicates that the process returned no exit code.
-	Stopped
 	// Exited indicates that the process returned a non-zero exit code.
 	Exited
+	// Stopped indicates that the process returned no exit code.
+	Stopped
 )
 
 func (ps ProcStatus) String() string {
-	return [...]string{"Stopped", "Running"}[ps]
+	return [...]string{"Stopped", "Exited", "Running"}[ps]
 }
