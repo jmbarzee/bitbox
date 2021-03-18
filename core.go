@@ -46,8 +46,15 @@ func (c *Core) Stop(id uuid.UUID) error {
 }
 
 // Status returns the status of the process.
-	return Stopped, errors.New("unimplemented")
 func (c *Core) Status(id uuid.UUID) (proc.ProcStatus, error) {
+	var p proc.Proc
+	var err error
+
+	if p, err = c.findProcess(id); err != nil {
+		c.newError("Status", err)
+	}
+
+	return p.Status(), nil
 }
 
 // Query streams the output/result of a process.
