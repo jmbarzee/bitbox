@@ -50,6 +50,12 @@ func NewProc(cmdName string, args ...string) (Proc, error) {
 		return Proc{}, err
 	}
 
+	go func() {
+		cmd.Wait()
+		// When cmd.Wait returns cmd.ProcessState will be set.
+		// TODO: send exit code to query subscribers
+	}()
+
 	return Proc{
 		stdout: stdout,
 		stderr: stderr,
@@ -76,6 +82,7 @@ func (p Proc) Kill() error {
 	return nil
 }
 
+// Status returns the status of the
 func (p Proc) Status() ProcStatus {
 	if p.cmd.ProcessState == nil {
 		return Running
