@@ -58,7 +58,7 @@ func (c *Core) Status(id uuid.UUID) (proc.ProcStatus, error) {
 }
 
 // Query streams the output/result of a process.
-func (c *Core) Query(id uuid.UUID) (chan<- ProcOutput, error) {
+func (c *Core) Query(id uuid.UUID) (chan<- proc.ProcOutput, error) {
 	return nil, errors.New("unimplemented")
 }
 
@@ -75,38 +75,3 @@ func (c *Core) findProcess(id uuid.UUID) (proc.Proc, error) {
 func (*Core) newError(action string, err error) error {
 	return fmt.Errorf("could not %v process: %w", action, err)
 }
-
-// ProcOutput is any output from a process.
-type ProcOutput interface {
-	isProcOutput()
-}
-
-var _ ProcOutput = (*ProcOutput_Stdout)(nil)
-
-// ProcOutput_Stdout is any output from the process which was written to Stdout.
-type ProcOutput_Stdout struct {
-	// Stdout is a series of characters sent to Stdout by a process.
-	Stdout string
-}
-
-func (*ProcOutput_Stdout) isProcOutput() {}
-
-var _ ProcOutput = (*ProcOutput_Stderr)(nil)
-
-// ProcOutput_Stderr is any output from the process which was written to Stderr.
-type ProcOutput_Stderr struct {
-	// Stderr is a series of characters sent to Stderr by a process.
-	Stderr string
-}
-
-func (*ProcOutput_Stderr) isProcOutput() {}
-
-var _ ProcOutput = (*ProcOutput_ExitCode)(nil)
-
-// ProcOutput_ExitCode is any output from the process which was written to Stderr.
-type ProcOutput_ExitCode struct {
-	// ExitCode is the exit code of a process.
-	ExitCode uint32
-}
-
-func (*ProcOutput_ExitCode) isProcOutput() {}

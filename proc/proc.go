@@ -8,6 +8,7 @@ package proc
 // Fingers crossed that its easier than rewriting os.ForkExec
 
 import (
+	"errors"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -109,3 +110,42 @@ const (
 func (ps ProcStatus) String() string {
 	return [...]string{"Stopped", "Exited", "Running"}[ps]
 }
+
+func (p Proc) Query() (chan<- ProcOutput, error) {
+	return nil, errors.New("unimplemented")
+}
+
+// ProcOutput is any output from a process.
+type ProcOutput interface {
+	isProcOutput()
+}
+
+var _ ProcOutput = (*ProcOutput_Stdout)(nil)
+
+// ProcOutput_Stdout is any output from the process which was written to Stdout.
+type ProcOutput_Stdout struct {
+	// Stdout is a series of characters sent to Stdout by a process.
+	Stdout string
+}
+
+func (*ProcOutput_Stdout) isProcOutput() {}
+
+var _ ProcOutput = (*ProcOutput_Stderr)(nil)
+
+// ProcOutput_Stderr is any output from the process which was written to Stderr.
+type ProcOutput_Stderr struct {
+	// Stderr is a series of characters sent to Stderr by a process.
+	Stderr string
+}
+
+func (*ProcOutput_Stderr) isProcOutput() {}
+
+var _ ProcOutput = (*ProcOutput_ExitCode)(nil)
+
+// ProcOutput_ExitCode is any output from the process which was written to Stderr.
+type ProcOutput_ExitCode struct {
+	// ExitCode is the exit code of a process.
+	ExitCode uint32
+}
+
+func (*ProcOutput_ExitCode) isProcOutput() {}
