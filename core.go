@@ -13,7 +13,7 @@ import (
 // Core supports basic process control and interaction.
 type Core struct {
 	m         sync.Mutex
-	processes map[uuid.UUID]*proc.Proc
+	processes map[uuid.UUID]proc.Proc
 }
 
 // Start initiates a process.
@@ -33,7 +33,7 @@ func (c *Core) Start(cmd string, args ...string) (uuid.UUID, error) {
 
 // Stop halts a process.
 func (c *Core) Stop(id uuid.UUID) error {
-	var p *proc.Proc
+	var p proc.Proc
 	var err error
 
 	if p, err = c.findProcess(id); err != nil {
@@ -46,8 +46,8 @@ func (c *Core) Stop(id uuid.UUID) error {
 }
 
 // Status returns the status of the process.
-func (c *Core) Status(id uuid.UUID) (ProcStatus, error) {
 	return Stopped, errors.New("unimplemented")
+func (c *Core) Status(id uuid.UUID) (proc.ProcStatus, error) {
 }
 
 // Query streams the output/result of a process.
@@ -55,11 +55,11 @@ func (c *Core) Query(id uuid.UUID) (chan<- ProcOutput, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (c *Core) findProcess(id uuid.UUID) (*proc.Proc, error) {
+func (c *Core) findProcess(id uuid.UUID) (proc.Proc, error) {
 	c.m.Lock()
 	p, ok := c.processes[id]
 	if !ok {
-		return nil, fmt.Errorf("could not find specified process %v", id)
+		return proc.Proc{}, fmt.Errorf("could not find specified process %v", id)
 	}
 	c.m.Lock()
 	return p, nil
@@ -67,20 +67,6 @@ func (c *Core) findProcess(id uuid.UUID) (*proc.Proc, error) {
 
 func (*Core) newError(action string, err error) error {
 	return fmt.Errorf("could not %v process: %w", action, err)
-}
-
-// ProcStatus is the status of a process.
-type ProcStatus int
-
-const (
-	// Stopped indicates that the process is not running.
-	Stopped ProcStatus = iota
-	// Running indicates that the process is running.
-	Running
-)
-
-func (ps ProcStatus) String() string {
-	return [...]string{"Stopped", "Running"}[ps]
 }
 
 // ProcOutput is any output from a process.

@@ -1,4 +1,11 @@
+// proc offers control over arbitrary processes.
+// proc depends heavily on os/exec.
+// If/when proc needs to do resource control & isolation
+// its probable that os/exec will need to be replaced with
+// either the os package itself or syscall.
 package proc
+
+// Fingers crossed that its easier than rewriting os.ForkExec
 
 import (
 	"io/ioutil"
@@ -18,32 +25,32 @@ type Proc struct {
 // NewProc constructs and begins process.
 // Stdout & Stderr of the new process are pointed at temp files.
 // The tempfiles are acessable through the coresponding members.
-func NewProc(cmdName string, args ...string) (*Proc, error) {
+func NewProc(cmdName string, args ...string) (Proc, error) {
 
 	var err error
 	var cmdPath string
 	if cmdPath, err = exec.LookPath(cmdName); err != nil {
-		return nil, err
+		return Proc{}, err
 	}
 	cmd := exec.Command(cmdPath, args...)
 
 	var stdout *os.File
 	if stdout, err = ioutil.TempFile("", ""); err != nil {
-		return nil, err
+		return Proc{}, err
 	}
 	cmd.Stdout = stdout
 
 	var stderr *os.File
 	if stderr, err = ioutil.TempFile("", ""); err != nil {
-		return nil, err
+		return Proc{}, err
 	}
 	cmd.Stderr = stderr
 
 	if err = cmd.Start(); err != nil {
-		return nil, err
+		return Proc{}, err
 	}
 
-	return &Proc{
+	return Proc{
 		stdout: stdout,
 		stderr: stderr,
 		cmd:    cmd,
@@ -67,4 +74,19 @@ func (p Proc) Kill() error {
 		return err
 	}
 	return nil
+}
+// ProcStatus is the status of a process.
+type ProcStatus int
+
+const (
+	// Running indicates that the process is running.
+	Running ProcStatus = iota
+	// Stopped indicates that the process returned no exit code.
+	Stopped
+	// Exited indicates that the process returned a non-zero exit code.
+	Exited
+)
+
+func (ps ProcStatus) String() string {
+	return [...]string{"Stopped", "Running"}[ps]
 }
