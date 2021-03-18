@@ -75,6 +75,18 @@ func (p Proc) Kill() error {
 	}
 	return nil
 }
+
+func (p Proc) Status() ProcStatus {
+	if p.cmd.ProcessState == nil {
+		return Running
+	}
+
+	if p.cmd.ProcessState.ExitCode() != 0 {
+		return Stopped
+	}
+	return Exited
+}
+
 // ProcStatus is the status of a process.
 type ProcStatus int
 
