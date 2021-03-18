@@ -64,11 +64,11 @@ func (c *Core) Query(id uuid.UUID) (chan<- ProcOutput, error) {
 
 func (c *Core) findProcess(id uuid.UUID) (proc.Proc, error) {
 	c.m.Lock()
+	defer c.m.Unlock()
 	p, ok := c.processes[id]
 	if !ok {
 		return proc.Proc{}, fmt.Errorf("could not find specified process %v", id)
 	}
-	c.m.Lock()
 	return p, nil
 }
 
