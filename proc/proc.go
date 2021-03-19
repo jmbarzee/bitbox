@@ -52,9 +52,8 @@ func NewProc(cmdName string, args ...string) (Proc, error) {
 	}
 
 	go func() {
+		// Wait on the cmd to make sure resources get released
 		cmd.Wait()
-		// When cmd.Wait returns cmd.ProcessState will be set.
-		// TODO: send exit code to query subscribers
 	}()
 
 	return Proc{
@@ -83,7 +82,7 @@ func (p Proc) Kill() error {
 	return nil
 }
 
-// Status returns the status of the
+// Status returns the status of the process.
 func (p Proc) Status() ProcStatus {
 	if p.cmd.ProcessState == nil {
 		return Running
@@ -128,6 +127,12 @@ type ProcOutput_Stdout struct {
 	Stdout string
 }
 
+func newProcOutput_Stdout(b []byte) ProcOutput {
+	return &ProcOutput_Stdout{
+		Stdout: (string)(b),
+	}
+}
+
 func (*ProcOutput_Stdout) isProcOutput() {}
 
 var _ ProcOutput = (*ProcOutput_Stderr)(nil)
@@ -136,6 +141,12 @@ var _ ProcOutput = (*ProcOutput_Stderr)(nil)
 type ProcOutput_Stderr struct {
 	// Stderr is a series of characters sent to Stderr by a process.
 	Stderr string
+}
+
+func newProcOutput_Stderr(b []byte) ProcOutput {
+	return &ProcOutput_Stderr{
+		Stderr: (string)(b),
+	}
 }
 
 func (*ProcOutput_Stderr) isProcOutput() {}
