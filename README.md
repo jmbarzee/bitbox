@@ -18,6 +18,15 @@ go build -o bin/bitbox cmd/server/main.go
 ./bin/bitbox
 ```
 
+
+## CLI Client
+```bash
+# Build the CLI
+go build -o bin/bitboxcli cmd/client/*.go
+# Run it.
+./bin/bitboxcli start <process>
+```
+
 ## Development Tools
 [gRPC & protoc](https://grpc.io/docs/languages/go/quickstart/) are used by `go generate` to update [bitbox/grpc](grpc/).
 
