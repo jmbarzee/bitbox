@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package grpc;
+
+// The Go package name is "grpcb".
+option go_package = "github.com/jmbarzee/bitbox/grpc";
+
+service BitBox {
+	// Start initiates a process.
+	rpc Start (StartRequest) returns (StartReply) {}
+
+	// Stop halts a process.
+	rpc Stop (StopRequest) returns (StopReply) {}
+
+	// Status returns the status of a process.
+	rpc Status (StatusRequest) returns (StatusReply) {}
+
+	// Query streams the output/result of a process.
+	rpc Query (QueryRequest) returns (stream QueryReply) {}
+}
+
+
+// StartRequest holds the command and nessecary parameters to run it.
+message StartRequest {
+    // Command is an arbitrary linux command.
+    // Command should be a fullpath or found in a directory in PATH.
+	string Command = 1;
+
+    // Parameters are handed to the command as ARGV.
+    // Glob patterns, pipelines, and redirections are not handled
+    // and will instead be passed as literal strings to the command.
+    repeated string Parameters = 2;
+}
+
+// StartReply holds the ID of the started process.
+message StartReply {
+    // ID is the unique identifier of the process.
+    string ID = 1;
+}
+
+
+
+// StopRequest holds the ID of the process that should be stopped.
+message StopRequest {
+    // ID is the unique identifier of the process.
+    string ID = 1;
+    // TODO: Consider making the type of signal sent to the process configurable, not just kill.
+}
+
+// StopReply is empty.
+message StopReply {
+    // TODO: consider including information about how the process was killed, Signal type, time, etc.
+}
+
+
+
+// StatusRequest holds the ID of the process to check the status of
+message StatusRequest {
+    // ID is the unique identifier of the process.
+    string ID = 1;
+}
+
+// StatusReply holds the status of the reply
+message StatusReply {
+    enum Status {
+        // Running indicates that the process is running.
+        Running = 0;
+        // Exited indicates that the process returned a non-zero exit code.
+        Exited = 1;
+        // Stopped indicates that the process returned no exit code.
+        Stopped = 2;
+    }
+}
+
+
+
+
+// QueryRequest holds the ID of the process whose output is being queried.
+message QueryRequest {
+    // ID is the unique identifier of the process.
+    string ID = 1;
+}
+
+// QueryReply holds output of the process queried.
+message QueryReply {
+    // Output is one of the forms of output that a process may utilize.
+    oneof Output {
+        // Stdout is any output from the process which was written to Stdout.
+        string Stdout = 1;
+        // Stderr is any output from the process which was written to Stderr.
+        string Stderr = 2;
+        // ExitCode is the code the process exited with.
+        uint32 ExitCode = 3;
+    }
+}

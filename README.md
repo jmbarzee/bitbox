@@ -7,3 +7,9 @@
 
 # BitBox
 Rudementary implementation of containerization in linux.
+
+
+## Development Tools
+[gRPC & protoc](https://grpc.io/docs/languages/go/quickstart/) are used by `go generate` to update [bitbox/grpc](grpc/).
+
+[gRPCox](https://github.com/gusaul/grpcox) is a lightweight docker container for easy manual testing.
