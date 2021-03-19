@@ -36,10 +36,10 @@ func (c *Core) Stop(id uuid.UUID) error {
 	var err error
 
 	if p, err = c.findProcess(id); err != nil {
-		c.newError("Stop", err)
+		return c.newError("Stop", err)
 	}
 	if err = p.Kill(); err != nil {
-		c.newError("Stop", err)
+		return c.newError("Stop", err)
 	}
 	return nil
 }
@@ -50,7 +50,7 @@ func (c *Core) Status(id uuid.UUID) (proc.ProcStatus, error) {
 	var err error
 
 	if p, err = c.findProcess(id); err != nil {
-		c.newError("Status", err)
+		return proc.Exited, c.newError("Status", err)
 	}
 
 	return p.Status(), nil
@@ -62,7 +62,7 @@ func (c *Core) Query(id uuid.UUID) (<-chan proc.ProcOutput, error) {
 	var err error
 
 	if p, err = c.findProcess(id); err != nil {
-		c.newError("Query", err)
+		return nil, c.newError("Query", err)
 	}
 
 	return p.Query()
