@@ -24,14 +24,14 @@ const outputReadRefreshInterval = time.Millisecond * 10
 // Stderr and Stdout are dumped to temp files on disk.
 type Proc struct {
 	// TODO: there is 99% chance we need a synchronization primitive at this level
-	stdout *os.File
-	stderr *os.File
-	cmd    *exec.Cmd
+	stdoutFileName string
+	stderrFileName string
+	cmd            *exec.Cmd
 }
 
 // NewProc constructs and begins process.
 // Stdout & Stderr of the new process are pointed at temp files.
-// The tempfiles are acessable through the coresponding members.
+// The tempfileNames are acessable through the coresponding members.
 func NewProc(cmdName string, args ...string) (Proc, error) {
 
 	var err error
@@ -46,12 +46,14 @@ func NewProc(cmdName string, args ...string) (Proc, error) {
 		return Proc{}, err
 	}
 	cmd.Stdout = stdout
+	stdoutName := stdout.Name()
 
 	var stderr *os.File
 	if stderr, err = ioutil.TempFile("", ""); err != nil {
 		return Proc{}, err
 	}
 	cmd.Stderr = stderr
+	stderrName := stderr.Name()
 
 	if err = cmd.Start(); err != nil {
 		return Proc{}, err
@@ -63,28 +65,22 @@ func NewProc(cmdName string, args ...string) (Proc, error) {
 	}()
 
 	return Proc{
-		stdout: stdout,
-		stderr: stderr,
-		cmd:    cmd,
+		stdoutFileName: stdoutName,
+		stderrFileName: stderrName,
+		cmd:            cmd,
 	}, nil
 }
 
 // Kill causes the running process to exit and closes the related resources.
-// There is no guarantee that the process has actually exited when Kill returns.
-// See documentation for os.Process.Kill()
 func (p Proc) Kill() error {
 	if err := p.cmd.Process.Kill(); err != nil {
 		// processes which have ended return errors
 		return err
 	}
-	// Only release resources if no err has been returned.
-	// TODO: should we return the error or try to close both and return some conglomarate error?
-	if err := p.stderr.Close(); err != nil {
-		return err
-	}
-	if err := p.stdout.Close(); err != nil {
-		return err
-	}
+	// Throw away the error from Wait() because an error is returned if either:
+	// 1. Wait() was already called (cool, we just use it to know that the process exited)
+	// 2. The process returned a non-zero exit code (cool, we will return any exit code)
+	p.cmd.Wait()
 	return nil
 }
 
@@ -128,17 +124,17 @@ func (p Proc) Query() (<-chan ProcOutput, error) {
 	wg := &sync.WaitGroup{}
 
 	wg.Add(2)
-	if err := pollRead(ctx, p.stdout.Name(), wg, stream, newProcOutput_Stdout); err != nil {
+	if err := pollRead(ctx, p.stdoutFileName, wg, stream, newProcOutput_Stdout); err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to setup poll read on stdout: %w", err)
 	}
-	if err := pollRead(ctx, p.stderr.Name(), wg, stream, newProcOutput_Stderr); err != nil {
+	if err := pollRead(ctx, p.stderrFileName, wg, stream, newProcOutput_Stderr); err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to setup poll read on stderr: %w", err)
 	}
 
 	go func() {
-		// Throw away the error from Wait() because either:
+		// Throw away the error from Wait() because an error is returned if either:
 		// 1. Wait() was already called (cool, we just use it to know that the process completed)
 		// 2. The process returned a non-zero exit code (cool, we will return any exit code)
 		p.cmd.Wait()
