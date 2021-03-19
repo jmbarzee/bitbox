@@ -8,11 +8,17 @@ package proc
 // Fingers crossed that its easier than rewriting os.ForkExec
 
 import (
-	"errors"
+	"bufio"
+	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"sync"
+	"time"
 )
+
+const outputReadRefreshInterval = time.Millisecond * 10
 
 // Proc is a BitBox process.
 // Stderr and Stdout are dumped to temp files on disk.
@@ -110,8 +116,93 @@ func (ps ProcStatus) String() string {
 	return [...]string{"Running", "Exited", "Stopped"}[ps]
 }
 
-func (p Proc) Query() (chan<- ProcOutput, error) {
-	return nil, errors.New("unimplemented")
+// Query streams output from the process to the returned channel.
+// The Stdout and Stderr files are opened for reads and polled until
+// a third routine finds that the process has exited.
+// The third routine cancels the context of the pollReads.
+// After the read routines finish the third routine sends the ExitCode and closes the channel.
+func (p Proc) Query() (<-chan ProcOutput, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := make(chan ProcOutput)
+
+	wg := &sync.WaitGroup{}
+
+	wg.Add(2)
+	if err := pollRead(ctx, p.stdout.Name(), wg, stream, newProcOutput_Stdout); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to setup poll read on stdout: %w", err)
+	}
+	if err := pollRead(ctx, p.stderr.Name(), wg, stream, newProcOutput_Stderr); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to setup poll read on stderr: %w", err)
+	}
+
+	go func() {
+		// Throw away the error from Wait() because either:
+		// 1. Wait() was already called (cool, we just use it to know that the process completed)
+		// 2. The process returned a non-zero exit code (cool, we will return any exit code)
+		p.cmd.Wait()
+		cancel()
+		wg.Wait()
+		stream <- &ProcOutput_ExitCode{
+			ExitCode: uint32(p.cmd.ProcessState.ExitCode()),
+		}
+		close(stream)
+	}()
+	return stream, nil
+}
+
+func pollRead(
+	ctx context.Context,
+	fileName string,
+	wg *sync.WaitGroup,
+	stream chan<- ProcOutput,
+	packageOutput func([]byte) ProcOutput,
+) error {
+	flags := os.O_RDONLY | os.O_SYNC
+	file, err := os.OpenFile(fileName, flags, 0600)
+	if err != nil {
+		return err
+	}
+
+	bufFile := bufio.NewReader(file)
+	ticker := time.NewTicker(outputReadRefreshInterval)
+
+	go func() {
+	PollLoop:
+		for {
+			select {
+			case <-ticker.C:
+				// ReadLoop
+				for {
+					b, err := ioutil.ReadAll(bufFile)
+					if err != nil {
+						// TODO: should we log the error somehow?
+						break PollLoop
+					}
+					if len(b) == 0 {
+						break // Yes, only exit the inner loop. This is the only path back to the PollLoop
+					}
+					stream <- packageOutput(b)
+				}
+			case <-ctx.Done():
+				// ReadLoop
+				for {
+					b, err := ioutil.ReadAll(bufFile)
+					if err != nil {
+						// TODO: should we log the error somehow?
+						break PollLoop
+					}
+					if len(b) == 0 {
+						break PollLoop
+					}
+					stream <- packageOutput(b)
+				}
+			}
+		}
+		wg.Done()
+	}()
+	return nil
 }
 
 // ProcOutput is any output from a process.

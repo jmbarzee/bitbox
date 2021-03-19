@@ -1,7 +1,6 @@
 package bitbox
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 
@@ -58,8 +57,15 @@ func (c *Core) Status(id uuid.UUID) (proc.ProcStatus, error) {
 }
 
 // Query streams the output/result of a process.
-func (c *Core) Query(id uuid.UUID) (chan<- proc.ProcOutput, error) {
-	return nil, errors.New("unimplemented")
+func (c *Core) Query(id uuid.UUID) (<-chan proc.ProcOutput, error) {
+	var p proc.Proc
+	var err error
+
+	if p, err = c.findProcess(id); err != nil {
+		c.newError("Query", err)
+	}
+
+	return p.Query()
 }
 
 func (c *Core) findProcess(id uuid.UUID) (proc.Proc, error) {
