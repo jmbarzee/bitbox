@@ -9,6 +9,15 @@
 Rudementary implementation of containerization in linux.
 
 
+## Server
+For available endpoints view the [gRPC deffinition](grpc/bitbox.proto).
+```bash
+# Build the Server.
+go build -o bin/bitbox cmd/server/main.go
+# Run it.
+./bin/bitbox
+```
+
 ## Development Tools
 [gRPC & protoc](https://grpc.io/docs/languages/go/quickstart/) are used by `go generate` to update [bitbox/grpc](grpc/).
 

@@ -15,6 +15,12 @@ type Core struct {
 	processes map[uuid.UUID]proc.Proc
 }
 
+func NewCore() *Core {
+	return &Core{
+		processes: make(map[uuid.UUID]proc.Proc),
+	}
+}
+
 // Start initiates a process.
 func (c *Core) Start(cmd string, args ...string) (uuid.UUID, error) {
 
