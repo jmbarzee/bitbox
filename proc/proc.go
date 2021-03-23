@@ -9,7 +9,6 @@ package proc
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -105,16 +104,23 @@ func (ps ProcStatus) String() string {
 // The third routine cancels the context of the pollReads.
 // After the read routines finish the third routine sends the ExitCode and closes the channel.
 func (p Proc) Query() (<-chan ProcOutput, error) {
+	flags := os.O_RDONLY | os.O_SYNC
+	outputFile, err := os.OpenFile(p.outputFileName, flags, 0600)
+	if err != nil {
+		return nil, err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := make(chan ProcOutput)
-
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	if err := pollRead(ctx, p.outputFileName, wg, stream); err != nil {
-		cancel()
-		return nil, fmt.Errorf("failed to setup poll read on output file: %w", err)
-	}
+	go func() {
+		pollRead(ctx, outputFile, stream)
+		finishRead(outputFile, stream)
+		outputFile.Close()
+		wg.Done()
+	}()
 
 	go func() {
 		// Throw away the error from Wait() because an error is returned if either:
@@ -134,21 +140,13 @@ func (p Proc) Query() (<-chan ProcOutput, error) {
 
 func pollRead(
 	ctx context.Context,
-	fileName string,
-	wg *sync.WaitGroup,
+	file *os.File,
 	stream chan<- ProcOutput,
-) error {
-	flags := os.O_RDONLY | os.O_SYNC
-	file, err := os.OpenFile(fileName, flags, 0600)
-	if err != nil {
-		return err
-	}
-
+) {
 	buf := make([]byte, 1024)
 	ticker := time.NewTicker(outputReadRefreshInterval)
 
 	go func() {
-	PollLoop:
 		for {
 			select {
 			case <-ticker.C:
@@ -157,32 +155,37 @@ func pollRead(
 					n, err := file.Read(buf)
 					if err != nil {
 						// TODO: should we log the error somehow?
-						break PollLoop
+						return
 					}
 					if n == 0 {
-						break // Yes, only exit the inner loop. This is the only path back to the PollLoop
+						break // move to wait for ticker or context to end
 					}
 					stream <- newProcOutput_Stdouterr(buf)
 				}
 			case <-ctx.Done():
-				// ReadLoop
-				for {
-					n, err := file.Read(buf)
-					if err != nil {
-						// TODO: should we log the error somehow?
-						break PollLoop
-					}
-					if n == 0 {
-						break PollLoop
-					}
-					stream <- newProcOutput_Stdouterr(buf)
-				}
+				return
 			}
 		}
-		file.Close()
-		wg.Done()
 	}()
-	return nil
+}
+
+func finishRead(
+	file *os.File,
+	stream chan<- ProcOutput,
+) {
+	buf := make([]byte, 1024)
+
+	for {
+		n, err := file.Read(buf)
+		if err != nil {
+			// TODO: should we log the error somehow?
+			break
+		}
+		if n == 0 {
+			break
+		}
+		stream <- newProcOutput_Stdouterr(buf)
+	}
 }
 
 // ProcOutput is any output from a process.
