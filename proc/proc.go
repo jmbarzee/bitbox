@@ -76,7 +76,7 @@ func (p Proc) Status() ProcStatus {
 		return Running
 	}
 
-	if p.cmd.ProcessState.ExitCode() != 0 {
+	if p.cmd.ProcessState.ExitCode() < 0 {
 		return Stopped
 	}
 	return Exited
@@ -88,9 +88,9 @@ type ProcStatus int
 const (
 	// Running indicates that the process is running.
 	Running ProcStatus = iota
-	// Exited indicates that the process returned a non-zero exit code.
+	// Exited indicates that the process returned an exit code.
 	Exited
-	// Stopped indicates that the process returned no exit code.
+	// Stopped indicates that the process was terminated by a signal.
 	Stopped
 )
 
