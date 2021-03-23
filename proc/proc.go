@@ -8,9 +8,7 @@ package proc
 // Fingers crossed that its easier than rewriting os.ForkExec
 
 import (
-	"bufio"
 	"context"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -23,78 +21,68 @@ const outputReadRefreshInterval = time.Millisecond * 10
 // Proc is a BitBox process.
 // Stderr and Stdout are dumped to temp files on disk.
 type Proc struct {
-	// TODO: there is 99% chance we need a synchronization primitive at this level
-	stdout *os.File
-	stderr *os.File
-	cmd    *exec.Cmd
+	outputFileName string
+	waitMutex      sync.Mutex // See https://github.com/golang/go/issues/28461
+	cmd            *exec.Cmd
 }
 
 // NewProc constructs and begins process.
 // Stdout & Stderr of the new process are pointed at temp files.
-// The tempfiles are acessable through the coresponding members.
-func NewProc(cmdName string, args ...string) (Proc, error) {
+// The tempfileNames are acessable through the coresponding members.
+func NewProc(cmdName string, args ...string) (*Proc, error) {
+
+	cmd := exec.Command(cmdName, args...)
 
 	var err error
-	var cmdPath string
-	if cmdPath, err = exec.LookPath(cmdName); err != nil {
-		return Proc{}, err
+	var output *os.File
+	if output, err = ioutil.TempFile("", ""); err != nil {
+		return nil, err
 	}
-	cmd := exec.Command(cmdPath, args...)
-
-	var stdout *os.File
-	if stdout, err = ioutil.TempFile("", ""); err != nil {
-		return Proc{}, err
-	}
-	cmd.Stdout = stdout
-
-	var stderr *os.File
-	if stderr, err = ioutil.TempFile("", ""); err != nil {
-		return Proc{}, err
-	}
-	cmd.Stderr = stderr
+	cmd.Stdout = output
+	cmd.Stderr = output
+	outputFileName := output.Name()
 
 	if err = cmd.Start(); err != nil {
-		return Proc{}, err
+		return nil, err
+	}
+
+	p := &Proc{
+		outputFileName: outputFileName,
+		cmd:            cmd,
 	}
 
 	go func() {
 		// Wait on the cmd to make sure resources get released
+		p.waitMutex.Lock()
 		cmd.Wait()
+		p.waitMutex.Unlock()
 	}()
 
-	return Proc{
-		stdout: stdout,
-		stderr: stderr,
-		cmd:    cmd,
-	}, nil
+	return p, nil
 }
 
-// Kill causes the running process to exit and closes the related resources.
-// There is no guarantee that the process has actually exited when Kill returns.
-// See documentation for os.Process.Kill()
-func (p Proc) Kill() error {
+// Stop causes the running process to exit (sigkill) and closes the related resources.
+func (p *Proc) Stop() error {
 	if err := p.cmd.Process.Kill(); err != nil {
 		// processes which have ended return errors
 		return err
 	}
-	// Only release resources if no err has been returned.
-	// TODO: should we return the error or try to close both and return some conglomarate error?
-	if err := p.stderr.Close(); err != nil {
-		return err
-	}
-	if err := p.stdout.Close(); err != nil {
-		return err
-	}
+	// Throw away the error from Wait() because an error is returned if either:
+	// 1. Wait() was already called (cool, we just use it to know that the process exited)
+	// 2. The process returned a non-zero exit code (cool, we will return any exit code)
+	p.waitMutex.Lock()
+	p.cmd.Wait()
+	p.waitMutex.Unlock()
 	return nil
 }
 
 // Status returns the status of the process.
-func (p Proc) Status() ProcStatus {
+func (p *Proc) Status() ProcStatus {
 	if p.cmd.ProcessState == nil {
 		return Running
 	}
 
-	if p.cmd.ProcessState.ExitCode() != 0 {
+	if p.cmd.ProcessState.ExitCode() < 0 {
 		return Stopped
 	}
 	return Exited
@@ -106,9 +94,9 @@ type ProcStatus int
 const (
 	// Running indicates that the process is running.
 	Running ProcStatus = iota
-	// Exited indicates that the process returned a non-zero exit code.
+	// Exited indicates that the process returned an exit code.
 	Exited
-	// Stopped indicates that the process returned no exit code.
+	// Stopped indicates that the process was terminated by a signal.
 	Stopped
 )
 
@@ -121,27 +109,33 @@ func (ps ProcStatus) String() string {
 // a third routine finds that the process has exited.
 // The third routine cancels the context of the pollReads.
 // After the read routines finish the third routine sends the ExitCode and closes the channel.
-func (p Proc) Query() (<-chan ProcOutput, error) {
+func (p *Proc) Query() (<-chan ProcOutput, error) {
+	flags := os.O_RDONLY | os.O_SYNC
+	outputFile, err := os.OpenFile(p.outputFileName, flags, 0600)
+	if err != nil {
+		return nil, err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := make(chan ProcOutput)
-
 	wg := &sync.WaitGroup{}
-
-	wg.Add(2)
-	if err := pollRead(ctx, p.stdout.Name(), wg, stream, newProcOutput_Stdout); err != nil {
-		cancel()
-		return nil, fmt.Errorf("failed to setup poll read on stdout: %w", err)
-	}
-	if err := pollRead(ctx, p.stderr.Name(), wg, stream, newProcOutput_Stderr); err != nil {
-		cancel()
-		return nil, fmt.Errorf("failed to setup poll read on stderr: %w", err)
-	}
+	wg.Add(1)
 
 	go func() {
-		// Throw away the error from Wait() because either:
+		pollRead(ctx, outputFile, stream)
+		finishRead(outputFile, stream)
+		outputFile.Close()
+		wg.Done()
+	}()
+
+	go func() {
+		// Throw away the error from Wait() because an error is returned if either:
 		// 1. Wait() was already called (cool, we just use it to know that the process completed)
 		// 2. The process returned a non-zero exit code (cool, we will return any exit code)
+		p.waitMutex.Lock()
 		p.cmd.Wait()
+		p.waitMutex.Unlock()
+
 		cancel()
 		wg.Wait()
 		stream <- &ProcOutput_ExitCode{
@@ -149,60 +143,56 @@ func (p Proc) Query() (<-chan ProcOutput, error) {
 		}
 		close(stream)
 	}()
+
 	return stream, nil
 }
 
 func pollRead(
 	ctx context.Context,
-	fileName string,
-	wg *sync.WaitGroup,
+	file *os.File,
 	stream chan<- ProcOutput,
-	packageOutput func([]byte) ProcOutput,
-) error {
-	flags := os.O_RDONLY | os.O_SYNC
-	file, err := os.OpenFile(fileName, flags, 0600)
-	if err != nil {
-		return err
-	}
-
-	bufFile := bufio.NewReader(file)
+) {
+	buf := make([]byte, 1024)
 	ticker := time.NewTicker(outputReadRefreshInterval)
 
-	go func() {
-	PollLoop:
-		for {
-			select {
-			case <-ticker.C:
-				// ReadLoop
-				for {
-					b, err := ioutil.ReadAll(bufFile)
-					if err != nil {
-						// TODO: should we log the error somehow?
-						break PollLoop
-					}
-					if len(b) == 0 {
-						break // Yes, only exit the inner loop. This is the only path back to the PollLoop
-					}
-					stream <- packageOutput(b)
+	for {
+		select {
+		case <-ticker.C:
+			// ReadLoop
+			for {
+				n, err := file.Read(buf)
+				if err != nil {
+					// TODO: should we log the error somehow?
+					return
 				}
-			case <-ctx.Done():
-				// ReadLoop
-				for {
-					b, err := ioutil.ReadAll(bufFile)
-					if err != nil {
-						// TODO: should we log the error somehow?
-						break PollLoop
-					}
-					if len(b) == 0 {
-						break PollLoop
-					}
-					stream <- packageOutput(b)
+				if n == 0 {
+					break // move to wait for ticker or context to end
 				}
+				stream <- newProcOutput_Stdouterr(buf)
 			}
+		case <-ctx.Done():
+			return
 		}
-		wg.Done()
-	}()
-	return nil
+	}
+}
+
+func finishRead(
+	file *os.File,
+	stream chan<- ProcOutput,
+) {
+	buf := make([]byte, 1024)
+
+	for {
+		n, err := file.Read(buf)
+		if err != nil {
+			// TODO: should we log the error somehow?
+			break
+		}
+		if n == 0 {
+			break
+		}
+		stream <- newProcOutput_Stdouterr(buf)
+	}
 }
 
 // ProcOutput is any output from a process.
@@ -210,37 +200,21 @@ type ProcOutput interface {
 	isProcOutput()
 }
 
-var _ ProcOutput = (*ProcOutput_Stdout)(nil)
+var _ ProcOutput = (*ProcOutput_Stdouterr)(nil)
 
-// ProcOutput_Stdout is any output from the process which was written to Stdout.
-type ProcOutput_Stdout struct {
+// ProcOutput_Stdouterr is any output from the process which was written to Stdout and Stderr.
+type ProcOutput_Stdouterr struct {
 	// Stdout is a series of characters sent to Stdout by a process.
-	Stdout string
+	Output string
 }
 
-func newProcOutput_Stdout(b []byte) ProcOutput {
-	return &ProcOutput_Stdout{
-		Stdout: (string)(b),
+func newProcOutput_Stdouterr(b []byte) ProcOutput {
+	return &ProcOutput_Stdouterr{
+		Output: (string)(b),
 	}
 }
 
-func (*ProcOutput_Stdout) isProcOutput() {}
-
-var _ ProcOutput = (*ProcOutput_Stderr)(nil)
-
-// ProcOutput_Stderr is any output from the process which was written to Stderr.
-type ProcOutput_Stderr struct {
-	// Stderr is a series of characters sent to Stderr by a process.
-	Stderr string
-}
-
-func newProcOutput_Stderr(b []byte) ProcOutput {
-	return &ProcOutput_Stderr{
-		Stderr: (string)(b),
-	}
-}
-
-func (*ProcOutput_Stderr) isProcOutput() {}
+func (*ProcOutput_Stdouterr) isProcOutput() {}
 
 var _ ProcOutput = (*ProcOutput_ExitCode)(nil)
 
