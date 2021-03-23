@@ -21,8 +21,8 @@ var cmdStart = &cobra.Command{
 		}
 
 		job := jobStart{
-			command:    args[0],
-			parameters: args[0:],
+			command:   args[0],
+			arguments: args[0:],
 		}
 		ctx := context.Background()
 		bbClient := getClient(ctx)
@@ -33,15 +33,15 @@ var cmdStart = &cobra.Command{
 }
 
 type jobStart struct {
-	command    string
-	parameters []string
+	command   string
+	arguments []string
 }
 
 // Execute starts a job on the remote BibBox
 func (j jobStart) execute(ctx context.Context, c bbgrpc.BitBoxClient) error {
 	request := &bbgrpc.StartRequest{
-		Command:    j.command,
-		Parameters: j.parameters,
+		Command:   j.command,
+		Arguments: j.arguments,
 	}
 
 	reply, err := c.Start(ctx, request)

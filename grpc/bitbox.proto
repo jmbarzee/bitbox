@@ -26,10 +26,10 @@ message StartRequest {
     // Command should be a fullpath or found in a directory in PATH.
 	string Command = 1;
 
-    // Parameters are handed to the command as ARGV.
+    // Arguments are handed to the command as ARGV.
     // Glob patterns, pipelines, and redirections are not handled
     // and will instead be passed as literal strings to the command.
-    repeated string Parameters = 2;
+    repeated string Arguments = 2;
 }
 
 // StartReply holds the ID of the started process.
