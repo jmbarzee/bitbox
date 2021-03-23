@@ -23,8 +23,7 @@ const outputReadRefreshInterval = time.Millisecond * 10
 // Stderr and Stdout are dumped to temp files on disk.
 type Proc struct {
 	// TODO: there is 99% chance we need a synchronization primitive at this level
-	stdoutFileName string
-	stderrFileName string
+	outputFileName string
 	cmd            *exec.Cmd
 }
 
@@ -36,19 +35,13 @@ func NewProc(cmdName string, args ...string) (Proc, error) {
 	cmd := exec.Command(cmdName, args...)
 
 	var err error
-	var stdout *os.File
-	if stdout, err = ioutil.TempFile("", ""); err != nil {
+	var output *os.File
+	if output, err = ioutil.TempFile("", ""); err != nil {
 		return Proc{}, err
 	}
-	cmd.Stdout = stdout
-	stdoutName := stdout.Name()
-
-	var stderr *os.File
-	if stderr, err = ioutil.TempFile("", ""); err != nil {
-		return Proc{}, err
-	}
-	cmd.Stderr = stderr
-	stderrName := stderr.Name()
+	cmd.Stdout = output
+	cmd.Stderr = output
+	outputFileName := output.Name()
 
 	if err = cmd.Start(); err != nil {
 		return Proc{}, err
@@ -60,8 +53,7 @@ func NewProc(cmdName string, args ...string) (Proc, error) {
 	}()
 
 	return Proc{
-		stdoutFileName: stdoutName,
-		stderrFileName: stderrName,
+		outputFileName: outputFileName,
 		cmd:            cmd,
 	}, nil
 }
@@ -117,15 +109,11 @@ func (p Proc) Query() (<-chan ProcOutput, error) {
 	stream := make(chan ProcOutput)
 
 	wg := &sync.WaitGroup{}
+	wg.Add(1)
 
-	wg.Add(2)
-	if err := pollRead(ctx, p.stdoutFileName, wg, stream, newProcOutput_Stdout); err != nil {
+	if err := pollRead(ctx, p.outputFileName, wg, stream); err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to setup poll read on stdout: %w", err)
-	}
-	if err := pollRead(ctx, p.stderrFileName, wg, stream, newProcOutput_Stderr); err != nil {
-		cancel()
-		return nil, fmt.Errorf("failed to setup poll read on stderr: %w", err)
+		return nil, fmt.Errorf("failed to setup poll read on output file: %w", err)
 	}
 
 	go func() {
@@ -140,6 +128,7 @@ func (p Proc) Query() (<-chan ProcOutput, error) {
 		}
 		close(stream)
 	}()
+
 	return stream, nil
 }
 
@@ -148,7 +137,6 @@ func pollRead(
 	fileName string,
 	wg *sync.WaitGroup,
 	stream chan<- ProcOutput,
-	packageOutput func([]byte) ProcOutput,
 ) error {
 	flags := os.O_RDONLY | os.O_SYNC
 	file, err := os.OpenFile(fileName, flags, 0600)
@@ -174,7 +162,7 @@ func pollRead(
 					if n == 0 {
 						break // Yes, only exit the inner loop. This is the only path back to the PollLoop
 					}
-					stream <- packageOutput(buf)
+					stream <- newProcOutput_Stdouterr(buf)
 				}
 			case <-ctx.Done():
 				// ReadLoop
@@ -187,7 +175,7 @@ func pollRead(
 					if n == 0 {
 						break PollLoop
 					}
-					stream <- packageOutput(buf)
+					stream <- newProcOutput_Stdouterr(buf)
 				}
 			}
 		}
@@ -202,37 +190,21 @@ type ProcOutput interface {
 	isProcOutput()
 }
 
-var _ ProcOutput = (*ProcOutput_Stdout)(nil)
+var _ ProcOutput = (*ProcOutput_Stdouterr)(nil)
 
-// ProcOutput_Stdout is any output from the process which was written to Stdout.
-type ProcOutput_Stdout struct {
+// ProcOutput_Stdouterr is any output from the process which was written to Stdout and Stderr.
+type ProcOutput_Stdouterr struct {
 	// Stdout is a series of characters sent to Stdout by a process.
-	Stdout string
+	Output string
 }
 
-func newProcOutput_Stdout(b []byte) ProcOutput {
-	return &ProcOutput_Stdout{
-		Stdout: (string)(b),
+func newProcOutput_Stdouterr(b []byte) ProcOutput {
+	return &ProcOutput_Stdouterr{
+		Output: (string)(b),
 	}
 }
 
-func (*ProcOutput_Stdout) isProcOutput() {}
-
-var _ ProcOutput = (*ProcOutput_Stderr)(nil)
-
-// ProcOutput_Stderr is any output from the process which was written to Stderr.
-type ProcOutput_Stderr struct {
-	// Stderr is a series of characters sent to Stderr by a process.
-	Stderr string
-}
-
-func newProcOutput_Stderr(b []byte) ProcOutput {
-	return &ProcOutput_Stderr{
-		Stderr: (string)(b),
-	}
-}
-
-func (*ProcOutput_Stderr) isProcOutput() {}
+func (*ProcOutput_Stdouterr) isProcOutput() {}
 
 var _ ProcOutput = (*ProcOutput_ExitCode)(nil)
 
