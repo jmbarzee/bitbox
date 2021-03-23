@@ -22,7 +22,7 @@ var cmdStart = &cobra.Command{
 
 		job := jobStart{
 			command:   args[0],
-			arguments: args[0:],
+			arguments: args[1:],
 		}
 		ctx := context.Background()
 		bbClient := getClient(ctx)
