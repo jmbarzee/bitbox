@@ -35,7 +35,7 @@ message StartRequest {
 // StartReply holds the ID of the started process.
 message StartReply {
     // ID is the unique identifier of the process.
-    string ID = 1;
+    bytes ID = 1;
 }
 
 
@@ -43,7 +43,7 @@ message StartReply {
 // StopRequest holds the ID of the process that should be stopped.
 message StopRequest {
     // ID is the unique identifier of the process.
-    string ID = 1;
+    bytes ID = 1;
     // TODO: Consider making the type of signal sent to the process configurable, not just kill.
 }
 
@@ -57,7 +57,7 @@ message StopReply {
 // StatusRequest holds the ID of the process to check the status of
 message StatusRequest {
     // ID is the unique identifier of the process.
-    string ID = 1;
+    bytes ID = 1;
 }
 
 // StatusReply holds the status of the reply
@@ -78,7 +78,7 @@ message StatusReply {
 // QueryRequest holds the ID of the process whose output is being queried.
 message QueryRequest {
     // ID is the unique identifier of the process.
-    string ID = 1;
+    bytes ID = 1;
 }
 
 // QueryReply holds output of the process queried.

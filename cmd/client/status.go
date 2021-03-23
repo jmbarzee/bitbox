@@ -37,13 +37,13 @@ type jobStatus struct {
 
 // Execute returns the status of a job on the remote BibBox
 func (j jobStatus) execute(ctx context.Context, c bbgrpc.BitBoxClient) error {
-	request := &bbgrpc.StopRequest{
-		ID: j.id,
+	request := &bbgrpc.StatusRequest{
+		ID: []byte(j.id),
 	}
 
-	_, err := c.Stop(ctx, request)
+	_, err := c.Status(ctx, request)
 	if err != nil {
-		log.Fatal(fmt.Errorf("failed to status process %s: %w", j.id, err))
+		log.Fatal(fmt.Errorf("failed to stop process %s: %w", j.id, err))
 	}
 	log.Println("Successfully statused process ", j.id)
 	return nil

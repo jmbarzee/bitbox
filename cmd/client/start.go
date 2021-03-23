@@ -48,6 +48,6 @@ func (j jobStart) execute(ctx context.Context, c bbgrpc.BitBoxClient) error {
 	if err != nil {
 		log.Fatal(fmt.Errorf("failed to run %s: %w", j.command, err))
 	}
-	log.Println("Successfully started process ", reply.GetID())
+	log.Println("Successfully started process: ", reply.GetID())
 	return nil
 }

@@ -38,7 +38,7 @@ type jobQuery struct {
 // Execute querys a job on the remote BibBox
 func (j jobQuery) execute(ctx context.Context, c bbgrpc.BitBoxClient) error {
 	request := &bbgrpc.QueryRequest{
-		ID: j.id,
+		ID: []byte(j.id),
 	}
 
 	queryClient, err := c.Query(ctx, request)

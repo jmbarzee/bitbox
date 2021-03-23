@@ -38,13 +38,13 @@ type jobStop struct {
 // Execute stops a job on the remote BibBox
 func (j jobStop) execute(ctx context.Context, c bbgrpc.BitBoxClient) error {
 	request := &bbgrpc.StopRequest{
-		ID: j.id,
+		ID: []byte(j.id),
 	}
 
 	_, err := c.Stop(ctx, request)
 	if err != nil {
 		log.Fatal(fmt.Errorf("failed to stop process %s: %w", j.id, err))
 	}
-	log.Println("Successfully stoped process ", j.id)
+	log.Println("Successfully stopped process: ", j.id)
 	return nil
 }
