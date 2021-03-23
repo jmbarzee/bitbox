@@ -11,7 +11,7 @@ import (
 // Core offers the central functionality of BitBox.
 // Core supports basic process control and interaction.
 type Core struct {
-	m         sync.Mutex
+	sync.RWMutex
 	processes map[uuid.UUID]proc.Proc
 }
 
@@ -24,9 +24,9 @@ func (c *Core) Start(cmd string, args ...string) (uuid.UUID, error) {
 		return uuid.UUID{}, c.newError("Start", err)
 	}
 
-	c.m.Lock()
+	c.Lock()
 	c.processes[id] = proc // Chance of colision (16 byte id, so roughly 2^128 chance)
-	c.m.Unlock()
+	c.Unlock()
 	return id, nil
 }
 
@@ -69,8 +69,8 @@ func (c *Core) Query(id uuid.UUID) (<-chan proc.ProcOutput, error) {
 }
 
 func (c *Core) findProcess(id uuid.UUID) (proc.Proc, error) {
-	c.m.Lock()
-	defer c.m.Unlock()
+	c.RLock()
+	defer c.RUnlock()
 	p, ok := c.processes[id]
 	if !ok {
 		return proc.Proc{}, fmt.Errorf("could not find specified process %v", id)
