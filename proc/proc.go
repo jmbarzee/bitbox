@@ -192,6 +192,7 @@ func pollRead(
 				}
 			}
 		}
+		file.Close()
 		wg.Done()
 	}()
 	return nil
