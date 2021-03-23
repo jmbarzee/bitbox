@@ -8,7 +8,6 @@ package proc
 // Fingers crossed that its easier than rewriting os.ForkExec
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -157,7 +156,7 @@ func pollRead(
 		return err
 	}
 
-	bufFile := bufio.NewReader(file)
+	buf := make([]byte, 1024)
 	ticker := time.NewTicker(outputReadRefreshInterval)
 
 	go func() {
@@ -167,28 +166,28 @@ func pollRead(
 			case <-ticker.C:
 				// ReadLoop
 				for {
-					b, err := ioutil.ReadAll(bufFile)
+					n, err := file.Read(buf)
 					if err != nil {
 						// TODO: should we log the error somehow?
 						break PollLoop
 					}
-					if len(b) == 0 {
+					if n == 0 {
 						break // Yes, only exit the inner loop. This is the only path back to the PollLoop
 					}
-					stream <- packageOutput(b)
+					stream <- packageOutput(buf)
 				}
 			case <-ctx.Done():
 				// ReadLoop
 				for {
-					b, err := ioutil.ReadAll(bufFile)
+					n, err := file.Read(buf)
 					if err != nil {
 						// TODO: should we log the error somehow?
 						break PollLoop
 					}
-					if len(b) == 0 {
+					if n == 0 {
 						break PollLoop
 					}
-					stream <- packageOutput(b)
+					stream <- packageOutput(buf)
 				}
 			}
 		}
