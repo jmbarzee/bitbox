@@ -3,6 +3,7 @@ package bitbox
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/jmbarzee/bitbox/grpc"
@@ -31,6 +32,8 @@ func NewServer() *Server {
 func (s *Server) Start(ctx context.Context, request *grpc.StartRequest) (*grpc.StartReply, error) {
 	cmd := request.GetCommand()
 	args := request.GetArguments()
+	log.Println("[Start] ", cmd, args)
+
 	uuid, err := s.c.Start(cmd, args...)
 	if err != nil {
 		return nil, err
@@ -49,6 +52,8 @@ func (s *Server) Stop(ctx context.Context, request *grpc.StopRequest) (*grpc.Sto
 	if err != nil {
 		return nil, err
 	}
+	log.Println("[Stop] ", uuid.String())
+
 	return &grpc.StopReply{}, s.c.Stop(uuid)
 }
 
@@ -58,6 +63,7 @@ func (s *Server) Status(ctx context.Context, request *grpc.StatusRequest) (*grpc
 	if err != nil {
 		return nil, err
 	}
+	log.Println("[Status] ", uuid.String())
 
 	status, err := s.c.Status(uuid)
 	if err != nil {
@@ -90,5 +96,11 @@ func convertToGRPCStatus(status proc.ProcStatus) (grpc.StatusReply_StatusEnum, e
 
 // Query streams the output/result of a process.
 func (s *Server) Query(request *grpc.QueryRequest, queryServer grpc.BitBox_QueryServer) error {
+	uuid, err := uuid.FromBytes(request.GetID())
+	if err != nil {
+		return err
+	}
+
+	log.Println("[Query] ", uuid.String())
 	return status.Errorf(codes.Unimplemented, "method Query not implemented")
 }
