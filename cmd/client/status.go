@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	bbgrpc "github.com/jmbarzee/bitbox/grpc"
@@ -20,8 +21,13 @@ var cmdStatus = &cobra.Command{
 			panic(errors.New("Require a single id as an argument"))
 		}
 
+		uuid, err := uuid.Parse(args[0])
+		if err != nil {
+			panic(err)
+		}
+
 		job := jobStatus{
-			id: args[0],
+			id: uuid,
 		}
 		ctx := context.Background()
 		bbClient := getClient(ctx)
@@ -32,13 +38,13 @@ var cmdStatus = &cobra.Command{
 }
 
 type jobStatus struct {
-	id string
+	id uuid.UUID
 }
 
 // Execute returns the status of a job on the remote BibBox
 func (j jobStatus) execute(ctx context.Context, c bbgrpc.BitBoxClient) error {
 	request := &bbgrpc.StatusRequest{
-		ID: []byte(j.id),
+		ID: j.id[:],
 	}
 
 	reply, err := c.Status(ctx, request)

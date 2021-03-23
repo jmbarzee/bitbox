@@ -39,10 +39,8 @@ func (s *Server) Start(ctx context.Context, request *grpc.StartRequest) (*grpc.S
 		return nil, err
 	}
 
-	uuidBytes := uuid[:]
-
 	return &grpc.StartReply{
-		ID: uuidBytes,
+		ID: uuid[:],
 	}, nil
 }
 
