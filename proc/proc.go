@@ -21,44 +21,48 @@ const outputReadRefreshInterval = time.Millisecond * 10
 // Proc is a BitBox process.
 // Stderr and Stdout are dumped to temp files on disk.
 type Proc struct {
-	// TODO: there is 99% chance we need a synchronization primitive at this level
 	outputFileName string
+	waitMutex      sync.Mutex // See https://github.com/golang/go/issues/28461
 	cmd            *exec.Cmd
 }
 
 // NewProc constructs and begins process.
 // Stdout & Stderr of the new process are pointed at temp files.
 // The tempfileNames are acessable through the coresponding members.
-func NewProc(cmdName string, args ...string) (Proc, error) {
+func NewProc(cmdName string, args ...string) (*Proc, error) {
 
 	cmd := exec.Command(cmdName, args...)
 
 	var err error
 	var output *os.File
 	if output, err = ioutil.TempFile("", ""); err != nil {
-		return Proc{}, err
+		return nil, err
 	}
 	cmd.Stdout = output
 	cmd.Stderr = output
 	outputFileName := output.Name()
 
 	if err = cmd.Start(); err != nil {
-		return Proc{}, err
+		return nil, err
+	}
+
+	p := &Proc{
+		outputFileName: outputFileName,
+		cmd:            cmd,
 	}
 
 	go func() {
 		// Wait on the cmd to make sure resources get released
+		p.waitMutex.Lock()
 		cmd.Wait()
+		p.waitMutex.Unlock()
 	}()
 
-	return Proc{
-		outputFileName: outputFileName,
-		cmd:            cmd,
-	}, nil
+	return p, nil
 }
 
-// Kill causes the running process to exit and closes the related resources.
-func (p Proc) Kill() error {
+// Stop causes the running process to exit (sigkill) and closes the related resources.
+func (p *Proc) Stop() error {
 	if err := p.cmd.Process.Kill(); err != nil {
 		// processes which have ended return errors
 		return err
@@ -66,12 +70,14 @@ func (p Proc) Kill() error {
 	// Throw away the error from Wait() because an error is returned if either:
 	// 1. Wait() was already called (cool, we just use it to know that the process exited)
 	// 2. The process returned a non-zero exit code (cool, we will return any exit code)
+	p.waitMutex.Lock()
 	p.cmd.Wait()
+	p.waitMutex.Unlock()
 	return nil
 }
 
 // Status returns the status of the process.
-func (p Proc) Status() ProcStatus {
+func (p *Proc) Status() ProcStatus {
 	if p.cmd.ProcessState == nil {
 		return Running
 	}
@@ -103,7 +109,7 @@ func (ps ProcStatus) String() string {
 // a third routine finds that the process has exited.
 // The third routine cancels the context of the pollReads.
 // After the read routines finish the third routine sends the ExitCode and closes the channel.
-func (p Proc) Query() (<-chan ProcOutput, error) {
+func (p *Proc) Query() (<-chan ProcOutput, error) {
 	flags := os.O_RDONLY | os.O_SYNC
 	outputFile, err := os.OpenFile(p.outputFileName, flags, 0600)
 	if err != nil {
@@ -126,7 +132,10 @@ func (p Proc) Query() (<-chan ProcOutput, error) {
 		// Throw away the error from Wait() because an error is returned if either:
 		// 1. Wait() was already called (cool, we just use it to know that the process completed)
 		// 2. The process returned a non-zero exit code (cool, we will return any exit code)
+		p.waitMutex.Lock()
 		p.cmd.Wait()
+		p.waitMutex.Unlock()
+
 		cancel()
 		wg.Wait()
 		stream <- &ProcOutput_ExitCode{
