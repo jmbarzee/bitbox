@@ -17,7 +17,7 @@ type Core struct {
 
 func NewCore() *Core {
 	return &Core{
-		processes: make(map[uuid.UUID]proc.Proc),
+		processes: make(map[uuid.UUID]*proc.Proc),
 	}
 }
 
