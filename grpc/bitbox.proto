@@ -62,7 +62,7 @@ message StatusRequest {
 
 // StatusReply holds the status of the reply
 message StatusReply {
-    enum Status {
+    enum StatusEnum {
         // Running indicates that the process is running.
         Running = 0;
         // Exited indicates that the process returned a non-zero exit code.
@@ -70,6 +70,7 @@ message StatusReply {
         // Stopped indicates that the process returned no exit code.
         Stopped = 2;
     }
+    StatusEnum Status = 1;
 }
 
 

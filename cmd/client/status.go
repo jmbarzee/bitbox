@@ -41,10 +41,11 @@ func (j jobStatus) execute(ctx context.Context, c bbgrpc.BitBoxClient) error {
 		ID: []byte(j.id),
 	}
 
-	_, err := c.Status(ctx, request)
+	reply, err := c.Status(ctx, request)
 	if err != nil {
 		log.Fatal(fmt.Errorf("failed to stop process %s: %w", j.id, err))
 	}
-	log.Println("Successfully statused process ", j.id)
+	log.Println("Successfully queried status of process: ", j.id, ", ", reply.Status.String())
+
 	return nil
 }
