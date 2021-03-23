@@ -155,27 +155,25 @@ func pollRead(
 	buf := make([]byte, 1024)
 	ticker := time.NewTicker(outputReadRefreshInterval)
 
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				// ReadLoop
-				for {
-					n, err := file.Read(buf)
-					if err != nil {
-						// TODO: should we log the error somehow?
-						return
-					}
-					if n == 0 {
-						break // move to wait for ticker or context to end
-					}
-					stream <- newProcOutput_Stdouterr(buf)
+	for {
+		select {
+		case <-ticker.C:
+			// ReadLoop
+			for {
+				n, err := file.Read(buf)
+				if err != nil {
+					// TODO: should we log the error somehow?
+					return
 				}
-			case <-ctx.Done():
-				return
+				if n == 0 {
+					break // move to wait for ticker or context to end
+				}
+				stream <- newProcOutput_Stdouterr(buf)
 			}
+		case <-ctx.Done():
+			return
 		}
-	}()
+	}
 }
 
 func finishRead(
