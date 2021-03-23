@@ -34,13 +34,9 @@ type Proc struct {
 // The tempfileNames are acessable through the coresponding members.
 func NewProc(cmdName string, args ...string) (Proc, error) {
 
-	var err error
-	var cmdPath string
-	if cmdPath, err = exec.LookPath(cmdName); err != nil {
-		return Proc{}, err
-	}
-	cmd := exec.Command(cmdPath, args...)
+	cmd := exec.Command(cmdName, args...)
 
+	var err error
 	var stdout *os.File
 	if stdout, err = ioutil.TempFile("", ""); err != nil {
 		return Proc{}, err
