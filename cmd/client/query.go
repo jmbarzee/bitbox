@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 
 	"github.com/google/uuid"
@@ -52,23 +53,16 @@ func (j jobQuery) execute(ctx context.Context, c bbgrpc.BitBoxClient) error {
 		log.Fatal(fmt.Errorf("failed to stop process %s: %w", j.id, err))
 	}
 
-Loop:
 	for {
 		reply, err := queryClient.Recv()
-		if err != nil {
-			log.Println(fmt.Errorf("failed to fetch reply: %w", err))
-			log.Println(fmt.Errorf("failed to fetch reply: %w", err))
+		if err == io.EOF {
+			log.Println("<End of Stream>")
 			break
 		}
-		switch output := reply.GetOutput().(type) {
-		case *bbgrpc.QueryReply_Stdout:
-			log.Println(output.Stdout)
-		case *bbgrpc.QueryReply_Stderr:
-			log.Printf("Error: %v", output.Stderr)
-		case *bbgrpc.QueryReply_ExitCode:
-			log.Printf("Process %v exited with code %v", j.id, output.ExitCode)
-			break Loop
+		if err != nil {
+			log.Fatal(fmt.Errorf("failed to fetch reply: %w", err))
 		}
+		log.Print(reply.GetOutput())
 	}
 
 	return nil

@@ -8,8 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmbarzee/bitbox/grpc"
 	"github.com/jmbarzee/bitbox/proc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // ensure Server implements BitBoxServer
@@ -100,5 +98,21 @@ func (s *Server) Query(request *grpc.QueryRequest, queryServer grpc.BitBox_Query
 	}
 
 	log.Println("[Query] ", uuid.String())
-	return status.Errorf(codes.Unimplemented, "method Query not implemented")
+
+	// TODO: pass context from queryServer to Query
+	stream, err := s.c.Query(uuid)
+	if err != nil {
+		return err
+	}
+
+	for output := range stream {
+		reply := &grpc.QueryReply{
+			Output: output,
+		}
+		err := queryServer.Send(reply)
+		if err != nil {
+			return err // TODO: is this really how we should handle this?
+		}
+	}
+	return nil
 }

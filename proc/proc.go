@@ -9,6 +9,7 @@ package proc
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -109,7 +110,7 @@ func (ps ProcStatus) String() string {
 // a third routine finds that the process has exited.
 // The third routine cancels the context of the pollReads.
 // After the read routines finish the third routine sends the ExitCode and closes the channel.
-func (p *Proc) Query() (<-chan ProcOutput, error) {
+func (p *Proc) Query() (<-chan string, error) {
 	flags := os.O_RDONLY | os.O_SYNC
 	outputFile, err := os.OpenFile(p.outputFileName, flags, 0600)
 	if err != nil {
@@ -117,7 +118,7 @@ func (p *Proc) Query() (<-chan ProcOutput, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	stream := make(chan ProcOutput)
+	stream := make(chan string)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
@@ -138,9 +139,8 @@ func (p *Proc) Query() (<-chan ProcOutput, error) {
 
 		cancel()
 		wg.Wait()
-		stream <- &ProcOutput_ExitCode{
-			ExitCode: uint32(p.cmd.ProcessState.ExitCode()),
-		}
+		exitCodeMsg := fmt.Sprintf("Exited with code %v", uint32(p.cmd.ProcessState.ExitCode()))
+		stream <- exitCodeMsg
 		close(stream)
 	}()
 
@@ -150,7 +150,7 @@ func (p *Proc) Query() (<-chan ProcOutput, error) {
 func pollRead(
 	ctx context.Context,
 	file *os.File,
-	stream chan<- ProcOutput,
+	stream chan<- string,
 ) {
 	buf := make([]byte, 1024)
 	ticker := time.NewTicker(outputReadRefreshInterval)
@@ -158,7 +158,6 @@ func pollRead(
 	for {
 		select {
 		case <-ticker.C:
-			// ReadLoop
 			for {
 				n, err := file.Read(buf)
 				if err != nil {
@@ -168,7 +167,9 @@ func pollRead(
 				if n == 0 {
 					break // move to wait for ticker or context to end
 				}
-				stream <- newProcOutput_Stdouterr(buf)
+				var copiedBytes []byte
+				copy(copiedBytes, buf)
+				stream <- string(copiedBytes)
 			}
 		case <-ctx.Done():
 			return
@@ -178,7 +179,7 @@ func pollRead(
 
 func finishRead(
 	file *os.File,
-	stream chan<- ProcOutput,
+	stream chan<- string,
 ) {
 	buf := make([]byte, 1024)
 
@@ -191,37 +192,8 @@ func finishRead(
 		if n == 0 {
 			break
 		}
-		stream <- newProcOutput_Stdouterr(buf)
+		var copiedBytes []byte
+		copy(copiedBytes, buf)
+		stream <- string(copiedBytes)
 	}
 }
-
-// ProcOutput is any output from a process.
-type ProcOutput interface {
-	isProcOutput()
-}
-
-var _ ProcOutput = (*ProcOutput_Stdouterr)(nil)
-
-// ProcOutput_Stdouterr is any output from the process which was written to Stdout and Stderr.
-type ProcOutput_Stdouterr struct {
-	// Stdout is a series of characters sent to Stdout by a process.
-	Output string
-}
-
-func newProcOutput_Stdouterr(b []byte) ProcOutput {
-	return &ProcOutput_Stdouterr{
-		Output: (string)(b),
-	}
-}
-
-func (*ProcOutput_Stdouterr) isProcOutput() {}
-
-var _ ProcOutput = (*ProcOutput_ExitCode)(nil)
-
-// ProcOutput_ExitCode is any output from the process which was written to Stderr.
-type ProcOutput_ExitCode struct {
-	// ExitCode is the exit code of a process.
-	ExitCode uint32
-}
-
-func (*ProcOutput_ExitCode) isProcOutput() {}
