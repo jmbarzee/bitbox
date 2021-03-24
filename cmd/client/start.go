@@ -16,9 +16,9 @@ var cmdStart = &cobra.Command{
 	Use:   "start",
 	Short: "start",
 	Long:  "Start a process on the bitbox server",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) < 1 {
-			panic(errors.New("Require atleast a single command as an argument"))
+			return errors.New("Require atleast a single command as an argument")
 		}
 
 		job := jobStart{
@@ -27,9 +27,7 @@ var cmdStart = &cobra.Command{
 		}
 		ctx := context.Background()
 		bbClient := getClient(ctx)
-		if err := job.execute(ctx, bbClient); err != nil {
-			panic(err)
-		}
+		return job.execute(ctx, bbClient)
 	},
 }
 
@@ -38,7 +36,7 @@ type jobStart struct {
 	arguments []string
 }
 
-// Execute starts a job on the remote BibBox
+// Execute starts a job on the remote bitBox
 func (j jobStart) execute(ctx context.Context, c bbgrpc.BitBoxClient) error {
 	request := &bbgrpc.StartRequest{
 		Command:   j.command,
@@ -47,9 +45,12 @@ func (j jobStart) execute(ctx context.Context, c bbgrpc.BitBoxClient) error {
 
 	reply, err := c.Start(ctx, request)
 	if err != nil {
-		log.Fatal(fmt.Errorf("failed to run %s: %w", j.command, err))
+		return fmt.Errorf("failed to run %s: %w", j.command, err)
 	}
 	uuid, err := uuid.FromBytes(reply.GetID())
+	if err != nil {
+		return fmt.Errorf("failed to parse uuid: %s", reply.GetID())
+	}
 	log.Println("Successfully started process: ", uuid.String())
 	return nil
 }
