@@ -1,6 +1,7 @@
 package bitbox
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -63,7 +64,7 @@ func (c *Core) Status(id uuid.UUID) (proc.ProcStatus, error) {
 }
 
 // Query streams the output/result of a process.
-func (c *Core) Query(id uuid.UUID) (<-chan string, error) {
+func (c *Core) Query(ctx context.Context, id uuid.UUID) (<-chan string, error) {
 	var p *proc.Proc
 	var err error
 
@@ -71,7 +72,7 @@ func (c *Core) Query(id uuid.UUID) (<-chan string, error) {
 		return nil, c.newError("Query", err)
 	}
 
-	return p.Query()
+	return p.Query(ctx)
 }
 
 func (c *Core) findProcess(id uuid.UUID) (*proc.Proc, error) {

@@ -106,25 +106,31 @@ func (ps ProcStatus) String() string {
 }
 
 // Query streams output from the process to the returned channel.
-// The Stdout and Stderr files are opened for reads and polled until
+// The output file is opened for reads and polled until
 // a third routine finds that the process has exited.
 // The third routine cancels the context of the pollReads.
-// After the read routines finish the third routine sends the ExitCode and closes the channel.
-func (p *Proc) Query() (<-chan string, error) {
+// After the read routines finish the third routine sends
+// the ExitCode and closes the channel.
+// Note: this function's structure could probably be cleaned up.
+func (p *Proc) Query(ctx context.Context) (<-chan string, error) {
 	flags := os.O_RDONLY | os.O_SYNC
 	outputFile, err := os.OpenFile(p.outputFileName, flags, 0600)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	pollContext, cancelPoll := context.WithCancel(ctx)
 	stream := make(chan string)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
 	go func() {
-		pollRead(ctx, outputFile, stream)
-		finishRead(outputFile, stream)
+		unstreamedBytes := pollRead(pollContext, outputFile, stream)
+		select {
+		case <-ctx.Done():
+		case stream <- string(unstreamedBytes):
+			finishRead(ctx, outputFile, stream)
+		}
 		outputFile.Close()
 		wg.Done()
 	}()
@@ -137,7 +143,7 @@ func (p *Proc) Query() (<-chan string, error) {
 		p.cmd.Wait()
 		p.waitMutex.Unlock()
 
-		cancel()
+		cancelPoll()
 		wg.Wait()
 		exitCodeMsg := fmt.Sprintf("Exited with code %v", uint32(p.cmd.ProcessState.ExitCode()))
 		stream <- exitCodeMsg
@@ -151,33 +157,39 @@ func pollRead(
 	ctx context.Context,
 	file *os.File,
 	stream chan<- string,
-) {
+) []byte {
 	buf := make([]byte, 1024)
 	ticker := time.NewTicker(outputReadRefreshInterval)
 
 	for {
 		select {
+		case <-ctx.Done():
+			return nil
 		case <-ticker.C:
 			for {
 				n, err := file.Read(buf)
 				if err != nil {
 					// TODO: should we log the error somehow?
-					return
+					return nil
 				}
 				if n == 0 {
 					break // move to wait for ticker or context to end
 				}
 				var copiedBytes []byte
 				copy(copiedBytes, buf)
-				stream <- string(copiedBytes)
+				select {
+				case stream <- string(copiedBytes):
+					//Do nothing
+				case <-ctx.Done():
+					return copiedBytes
+				}
 			}
-		case <-ctx.Done():
-			return
 		}
 	}
 }
 
 func finishRead(
+	ctx context.Context,
 	file *os.File,
 	stream chan<- string,
 ) {
@@ -194,6 +206,11 @@ func finishRead(
 		}
 		var copiedBytes []byte
 		copy(copiedBytes, buf)
-		stream <- string(copiedBytes)
+		select {
+		case <-ctx.Done():
+			return
+		case stream <- string(copiedBytes):
+			//Do nothing
+		}
 	}
 }

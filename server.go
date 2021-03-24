@@ -100,7 +100,7 @@ func (s *Server) Query(request *grpc.QueryRequest, queryServer grpc.BitBox_Query
 	log.Println("[Query] ", uuid.String())
 
 	// TODO: pass context from queryServer to Query
-	stream, err := s.c.Query(uuid)
+	stream, err := s.c.Query(queryServer.Context(), uuid)
 	if err != nil {
 		return err
 	}
