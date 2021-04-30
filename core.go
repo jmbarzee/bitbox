@@ -1,6 +1,7 @@
 package bitbox
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -13,6 +14,12 @@ import (
 type Core struct {
 	sync.RWMutex
 	processes map[uuid.UUID]*proc.Proc
+}
+
+func NewCore() *Core {
+	return &Core{
+		processes: make(map[uuid.UUID]*proc.Proc),
+	}
 }
 
 // Start initiates a process.
@@ -57,7 +64,7 @@ func (c *Core) Status(id uuid.UUID) (proc.ProcStatus, error) {
 }
 
 // Query streams the output/result of a process.
-func (c *Core) Query(id uuid.UUID) (<-chan proc.ProcOutput, error) {
+func (c *Core) Query(ctx context.Context, id uuid.UUID) (<-chan proc.ProcOutput, error) {
 	var p *proc.Proc
 	var err error
 
@@ -65,7 +72,7 @@ func (c *Core) Query(id uuid.UUID) (<-chan proc.ProcOutput, error) {
 		return nil, c.newError("Query", err)
 	}
 
-	return p.Query()
+	return p.Query(ctx)
 }
 
 func (c *Core) findProcess(id uuid.UUID) (*proc.Proc, error) {

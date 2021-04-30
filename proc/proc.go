@@ -1,8 +1,3 @@
-// proc offers control over arbitrary processes.
-// proc depends heavily on os/exec.
-// If/when proc needs to do resource control & isolation
-// its probable that os/exec will need to be replaced with
-// either the os package itself or syscall.
 package proc
 
 // Fingers crossed that its easier than rewriting os.ForkExec
@@ -20,6 +15,11 @@ const outputReadRefreshInterval = time.Millisecond * 10
 
 // Proc is a BitBox process.
 // Stderr and Stdout are dumped to temp files on disk.
+// Proc offers control over arbitrary processes.
+// Proc depends heavily on os/exec.
+// If/when proc needs to do resource control & isolation
+// its probable that os/exec will need to be replaced with
+// either the os package itself or syscall.
 type Proc struct {
 	outputFileName string
 	waitMutex      sync.Mutex // See https://github.com/golang/go/issues/28461
@@ -105,25 +105,32 @@ func (ps ProcStatus) String() string {
 }
 
 // Query streams output from the process to the returned channel.
-// The Stdout and Stderr files are opened for reads and polled until
+// The output file is opened for reads and polled until
 // a third routine finds that the process has exited.
 // The third routine cancels the context of the pollReads.
+// After the read routines finish the third routine sends
+// the ExitCode and closes the channel.
+// Note: this function's structure could probably be cleaned up.
 // After the read routines finish the third routine sends the ExitCode and closes the channel.
-func (p *Proc) Query() (<-chan ProcOutput, error) {
+func (p *Proc) Query(ctx context.Context) (<-chan ProcOutput, error) {
 	flags := os.O_RDONLY | os.O_SYNC
 	outputFile, err := os.OpenFile(p.outputFileName, flags, 0600)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	pollContext, cancelPoll := context.WithCancel(ctx)
 	stream := make(chan ProcOutput)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
 	go func() {
-		pollRead(ctx, outputFile, stream)
-		finishRead(outputFile, stream)
+		unstreamedOutput := pollRead(pollContext, outputFile, stream)
+		select {
+		case <-ctx.Done():
+		case stream <- unstreamedOutput:
+			finishRead(ctx, outputFile, stream)
+		}
 		outputFile.Close()
 		wg.Done()
 	}()
@@ -136,7 +143,7 @@ func (p *Proc) Query() (<-chan ProcOutput, error) {
 		p.cmd.Wait()
 		p.waitMutex.Unlock()
 
-		cancel()
+		cancelPoll()
 		wg.Wait()
 		stream <- &ProcOutput_ExitCode{
 			ExitCode: uint32(p.cmd.ProcessState.ExitCode()),
@@ -151,32 +158,38 @@ func pollRead(
 	ctx context.Context,
 	file *os.File,
 	stream chan<- ProcOutput,
-) {
+) ProcOutput {
 	buf := make([]byte, 1024)
 	ticker := time.NewTicker(outputReadRefreshInterval)
 
 	for {
 		select {
+		case <-ctx.Done():
+			return nil
 		case <-ticker.C:
 			// ReadLoop
 			for {
 				n, err := file.Read(buf)
 				if err != nil {
 					// TODO: should we log the error somehow?
-					return
+					return nil
 				}
 				if n == 0 {
 					break // move to wait for ticker or context to end
 				}
-				stream <- newProcOutput_Stdouterr(buf)
+				select {
+				case stream <- newProcOutput_Stdouterr(buf):
+					//Do nothing
+				case <-ctx.Done():
+					return newProcOutput_Stdouterr(buf)
+				}
 			}
-		case <-ctx.Done():
-			return
 		}
 	}
 }
 
 func finishRead(
+	ctx context.Context,
 	file *os.File,
 	stream chan<- ProcOutput,
 ) {
@@ -191,7 +204,12 @@ func finishRead(
 		if n == 0 {
 			break
 		}
-		stream <- newProcOutput_Stdouterr(buf)
+		select {
+		case <-ctx.Done():
+			return
+		case stream <- newProcOutput_Stdouterr(buf):
+			//Do nothing
+		}
 	}
 }
 

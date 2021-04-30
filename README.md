@@ -7,3 +7,27 @@
 
 # BitBox
 Rudementary implementation of containerization in linux.
+
+
+## Server
+For available endpoints view the [gRPC deffinition](grpc/bitbox.proto).
+```bash
+# Build the Server.
+go build -o bin/bitbox cmd/server/main.go
+# Run it.
+./bin/bitbox
+```
+
+
+## CLI Client
+```bash
+# Build the CLI
+go build -o bin/bitboxcli cmd/client/*.go
+# Run it.
+./bin/bitboxcli start <process>
+```
+
+## Development Tools
+[gRPC & protoc](https://grpc.io/docs/languages/go/quickstart/) are used by `go generate` to update [bitbox/grpc](grpc/).
+
+[gRPCox](https://github.com/gusaul/grpcox) is a lightweight docker container for easy manual testing.
