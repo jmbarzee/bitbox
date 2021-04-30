@@ -23,7 +23,7 @@ var defaultAddress = optionalEnvString("BIT_BOX_ADDR", func() string {
 }())
 
 var root = &cobra.Command{
-	Use:   "bitboxc",
+	Use:   "bitboxcli",
 	Short: "A CLI tool for remote BitBox operations",
 	Long:  "Execute remote linux processes on a BitBox server",
 }

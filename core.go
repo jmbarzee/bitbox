@@ -64,7 +64,7 @@ func (c *Core) Status(id uuid.UUID) (proc.ProcStatus, error) {
 }
 
 // Query streams the output/result of a process.
-func (c *Core) Query(ctx context.Context, id uuid.UUID) (<-chan string, error) {
+func (c *Core) Query(ctx context.Context, id uuid.UUID) (<-chan proc.ProcOutput, error) {
 	var p *proc.Proc
 	var err error
 

@@ -55,13 +55,16 @@ func (j jobQuery) execute(ctx context.Context, c bbgrpc.BitBoxClient) error {
 		reply, err := queryClient.Recv()
 		if err == io.EOF {
 			log.Println("<End of Stream>")
-			break
 		}
 		if err != nil {
 			return fmt.Errorf("failed to fetch reply: %w", err)
 		}
-		log.Print(reply.GetOutput())
+		switch output := reply.GetOutput().(type) {
+		case *bbgrpc.QueryReply_Stdouterr:
+			log.Println(output.Stdouterr)
+		case *bbgrpc.QueryReply_ExitCode:
+			log.Printf("Process %v exited with code %v", j.id, output.ExitCode)
+			return nil
+		}
 	}
-
-	return nil
 }

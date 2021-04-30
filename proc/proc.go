@@ -1,15 +1,9 @@
-// proc offers control over arbitrary processes.
-// proc depends heavily on os/exec.
-// If/when proc needs to do resource control & isolation
-// its probable that os/exec will need to be replaced with
-// either the os package itself or syscall.
 package proc
 
 // Fingers crossed that its easier than rewriting os.ForkExec
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -21,6 +15,11 @@ const outputReadRefreshInterval = time.Millisecond * 10
 
 // Proc is a BitBox process.
 // Stderr and Stdout are dumped to temp files on disk.
+// Proc offers control over arbitrary processes.
+// Proc depends heavily on os/exec.
+// If/when proc needs to do resource control & isolation
+// its probable that os/exec will need to be replaced with
+// either the os package itself or syscall.
 type Proc struct {
 	outputFileName string
 	waitMutex      sync.Mutex // See https://github.com/golang/go/issues/28461
@@ -112,7 +111,8 @@ func (ps ProcStatus) String() string {
 // After the read routines finish the third routine sends
 // the ExitCode and closes the channel.
 // Note: this function's structure could probably be cleaned up.
-func (p *Proc) Query(ctx context.Context) (<-chan string, error) {
+// After the read routines finish the third routine sends the ExitCode and closes the channel.
+func (p *Proc) Query(ctx context.Context) (<-chan ProcOutput, error) {
 	flags := os.O_RDONLY | os.O_SYNC
 	outputFile, err := os.OpenFile(p.outputFileName, flags, 0600)
 	if err != nil {
@@ -120,15 +120,15 @@ func (p *Proc) Query(ctx context.Context) (<-chan string, error) {
 	}
 
 	pollContext, cancelPoll := context.WithCancel(ctx)
-	stream := make(chan string)
+	stream := make(chan ProcOutput)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
 	go func() {
-		unstreamedBytes := pollRead(pollContext, outputFile, stream)
+		unstreamedOutput := pollRead(pollContext, outputFile, stream)
 		select {
 		case <-ctx.Done():
-		case stream <- string(unstreamedBytes):
+		case stream <- unstreamedOutput:
 			finishRead(ctx, outputFile, stream)
 		}
 		outputFile.Close()
@@ -145,8 +145,9 @@ func (p *Proc) Query(ctx context.Context) (<-chan string, error) {
 
 		cancelPoll()
 		wg.Wait()
-		exitCodeMsg := fmt.Sprintf("Exited with code %v", uint32(p.cmd.ProcessState.ExitCode()))
-		stream <- exitCodeMsg
+		stream <- &ProcOutput_ExitCode{
+			ExitCode: uint32(p.cmd.ProcessState.ExitCode()),
+		}
 		close(stream)
 	}()
 
@@ -156,8 +157,8 @@ func (p *Proc) Query(ctx context.Context) (<-chan string, error) {
 func pollRead(
 	ctx context.Context,
 	file *os.File,
-	stream chan<- string,
-) []byte {
+	stream chan<- ProcOutput,
+) ProcOutput {
 	buf := make([]byte, 1024)
 	ticker := time.NewTicker(outputReadRefreshInterval)
 
@@ -166,6 +167,7 @@ func pollRead(
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+			// ReadLoop
 			for {
 				n, err := file.Read(buf)
 				if err != nil {
@@ -175,13 +177,11 @@ func pollRead(
 				if n == 0 {
 					break // move to wait for ticker or context to end
 				}
-				var copiedBytes []byte
-				copy(copiedBytes, buf)
 				select {
-				case stream <- string(copiedBytes):
+				case stream <- newProcOutput_Stdouterr(buf):
 					//Do nothing
 				case <-ctx.Done():
-					return copiedBytes
+					return newProcOutput_Stdouterr(buf)
 				}
 			}
 		}
@@ -191,7 +191,7 @@ func pollRead(
 func finishRead(
 	ctx context.Context,
 	file *os.File,
-	stream chan<- string,
+	stream chan<- ProcOutput,
 ) {
 	buf := make([]byte, 1024)
 
@@ -204,13 +204,42 @@ func finishRead(
 		if n == 0 {
 			break
 		}
-		var copiedBytes []byte
-		copy(copiedBytes, buf)
 		select {
 		case <-ctx.Done():
 			return
-		case stream <- string(copiedBytes):
+		case stream <- newProcOutput_Stdouterr(buf):
 			//Do nothing
 		}
 	}
 }
+
+// ProcOutput is any output from a process.
+type ProcOutput interface {
+	isProcOutput()
+}
+
+var _ ProcOutput = (*ProcOutput_Stdouterr)(nil)
+
+// ProcOutput_Stdouterr is any output from the process which was written to Stdout and Stderr.
+type ProcOutput_Stdouterr struct {
+	// Stdout is a series of characters sent to Stdout by a process.
+	Output string
+}
+
+func newProcOutput_Stdouterr(b []byte) ProcOutput {
+	return &ProcOutput_Stdouterr{
+		Output: (string)(b),
+	}
+}
+
+func (*ProcOutput_Stdouterr) isProcOutput() {}
+
+var _ ProcOutput = (*ProcOutput_ExitCode)(nil)
+
+// ProcOutput_ExitCode is any output from the process which was written to Stderr.
+type ProcOutput_ExitCode struct {
+	// ExitCode is the exit code of a process.
+	ExitCode uint32
+}
+
+func (*ProcOutput_ExitCode) isProcOutput() {}

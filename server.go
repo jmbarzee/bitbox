@@ -1,5 +1,7 @@
 package bitbox
 
+//go:generate protoc --proto_path=. --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative bitbox.proto
+
 import (
 	"context"
 	"fmt"
@@ -98,7 +100,6 @@ func (s *Server) Query(request *grpc.QueryRequest, queryServer grpc.BitBox_Query
 	}
 
 	log.Println("[Query] ", uuid.String())
-
 	// TODO: pass context from queryServer to Query
 	stream, err := s.c.Query(queryServer.Context(), uuid)
 	if err != nil {
@@ -106,8 +107,23 @@ func (s *Server) Query(request *grpc.QueryRequest, queryServer grpc.BitBox_Query
 	}
 
 	for output := range stream {
-		reply := &grpc.QueryReply{
-			Output: output,
+		// You should ask yourself: why do we initialize reply the same way twice?
+		// The answer: because QueryReply.Output is of type grpc.isQueryReply_Output
+		// which is not public.
+		var reply *grpc.QueryReply
+		switch output := output.(type) {
+		case *proc.ProcOutput_Stdouterr:
+			reply = &grpc.QueryReply{
+				Output: &grpc.QueryReply_Stdouterr{
+					Stdouterr: output.Output,
+				},
+			}
+		case *proc.ProcOutput_ExitCode:
+			reply = &grpc.QueryReply{
+				Output: &grpc.QueryReply_ExitCode{
+					ExitCode: output.ExitCode,
+				},
+			}
 		}
 		err := queryServer.Send(reply)
 		if err != nil {

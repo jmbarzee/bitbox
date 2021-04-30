@@ -84,6 +84,11 @@ message QueryRequest {
 
 // QueryReply holds output of the process queried.
 message QueryReply {
-    // Output is the output of the process (includes exit code)
-    string Output = 1;
+    // Output is one of the forms of output that a process may utilize.
+    oneof Output {
+        // Stdouterr is any output from the process which was written to Stdouterr.
+        string Stdouterr = 1;
+        // ExitCode is the code the process exited with.
+        uint32 ExitCode = 3; // Leaving as 3 to allow for seperation of Stdout & Stderr at some point
+    }
 }
